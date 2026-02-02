@@ -85,19 +85,19 @@ df_backup <- df_final
 # ARG Grouping ####
 df1 <- read_excel('C:/Users/KEN/Desktop/UK/PhD/AMR/Archaea/Archaea_output.xlsx', sheet = "ARG")
 
-# 定义分组函数
+# Define the grouping function
 group_ARGs <- function(df1) {
   df1$Group <- NA  # 创建 Group 列
   
-  # 按 Contig 分组
+  # Grouped by Contig
   for (contig in unique(df1$Contig)) {
     subset_df <- df1[df1$Contig == contig, ]  # 选出当前 Contig 的数据
     
-    # 按 class 分组
+    # Grouped by class
     for (class in unique(subset_df$class)) {
       class_rows <- subset_df[subset_df$class == class, ]  # 选出当前 class 的数据
       
-      # 按行分配组号
+      # Assign group numbers by row
       if (nrow(class_rows) > 0) {
         df1$Group[df1$Contig == contig & df1$class == class] <- 1:nrow(class_rows)
       }
@@ -109,36 +109,35 @@ group_ARGs <- function(df1) {
 
 df1_grouped <- group_ARGs(df1)
 
-# ARG与MGE匹配,并筛选中点间距小于10kb的结果，填入对应的ARG信息 ####
+# ARG and MGE were matched, and results with a midpoint distance of less than 10 kb were filtered and populated with the corresponding ARG information ####
 MGE_compilation <- function(df_final, df1_grouped) {
-  # 获取所有唯一的class值
+  # Retrieve all unique class values
   unique_classes <- unique(df1_grouped$class)
   
-  # 在df_final中为每个class创建一列，列名加上 _gap
+  # In df_final, create a column for each class, appending the column name with `_gap`
   df_final[, paste0(unique_classes, "_gap")] <- NA
   
-  # 为每个class创建 fa_name 列
+  # Create a fa_name column for each class
   for (class_name in unique_classes) {
     fa_name_col <- paste0(class_name, "_fa_name")
     df_final[[fa_name_col]] <- NA
   }
   
-  # 逐步匹配并填充数据
   for (group in unique(df1_grouped$Group)) {
     df_grouped_1 <- df1_grouped %>% filter(Group == group)
     
     for (class_name in unique(df_grouped_1$class)) {
       df_class <- df_grouped_1 %>% filter(class == class_name)
       
-      # 使用 center_ARG 列进行匹配，顺便匹配 fa_name
+      # Match using the centre_ARG column, and incidentally match fa_name
       matched_data <- df_class %>% select(Contig, center_ARG, fa_name)
       
-      # 执行左连接，将 center_ARG 和 fa_name 填充到 df_final 中
+      # Perform a left join, populating `df_final` with `center_ARG` and `fa_name`
       df_final <- df_final %>%
         left_join(matched_data, by = c("Specific_Contig" = "Contig"))
       
-      if ("center_ARG" %in% colnames(df_final)) {  # 确保 center_ARG 列存在
-        # 填充 center_ARG 和 fa_name
+      if ("center_ARG" %in% colnames(df_final)) {
+        # Fill in centre_ARG and fa_name
         df_final <- df_final %>%
           mutate(
             !!paste0(class_name, "_gap") := ifelse(!is.na(center_ARG),
@@ -148,67 +147,65 @@ MGE_compilation <- function(df_final, df1_grouped) {
                                                        ifelse(is.na(!!sym(paste0(class_name, "_fa_name"))), fa_name, paste(!!sym(paste0(class_name, "_fa_name")), fa_name, sep = ";")),
                                                        !!sym(paste0(class_name, "_fa_name")))
           ) %>%
-          select(-center_ARG, -fa_name)  # 删除临时匹配的 center_ARG 和 fa_name 列
+          select(-center_ARG, -fa_name) 
       }
     }
   }
   
-  # 计算 center_ARG 与 center_MGE 之间的差的绝对值，并更新 center_ARG 列
+  # Calculate the absolute value of the difference between centre_ARG and centre_MGE, and update the centre_ARG column
   df_final <- df_final %>%
     mutate(across(all_of(paste0(unique_classes, "_gap")), 
                   ~ sapply(seq_along(.), function(i) {
                     val <- .[i]
-                    if (!is.na(val)) {  # 只有非NA值才进行处理
-                      # 确保 val 是字符类型
+                    if (!is.na(val)) {  
+                      # Ensure that val is of character type
                       val <- as.character(val)
                       
-                      # 检查是否有分号分隔的多个值
+                      # Check for multiple values separated by semicolons
                       values <- unlist(strsplit(val, ";"))
                       
-                      # 获取该行对应的 center_MGE 值
+                      # Retrieve the corresponding centre_MGE value for this row
                       center_MGE_value <- center_MGE[i]
                       
-                      # 对每个值计算与该行对应的 center_MGE 的差的绝对值
+                      # Calculate the absolute value of the difference between each value and the corresponding centre_MGE for that row
                       abs_diffs <- sapply(values, function(v) abs(as.numeric(v) - center_MGE_value))
                       
-                      # 只保留差值小于等于 10000 的值
+                      # Only retain values where the difference is less than or equal to 10,000
                       filtered_values <- values[abs_diffs <= 10000]
                       filtered_diffs <- abs_diffs[abs_diffs <= 10000]
                       
-                      # 如果有多个差值，合并为一个字符串
+                      # If there are multiple differences, merge them into a single string
                       if (length(filtered_diffs) == 1) {
-                        return(filtered_diffs[1])  # 如果只有一个差值，直接返回
+                        return(filtered_diffs[1])  # If there is only one difference, return directly
                       } else if (length(filtered_diffs) > 1) {
-                        return(paste(filtered_diffs, collapse = ";"))  # 如果有多个差值，合并为一个字符串
+                        return(paste(filtered_diffs, collapse = ";"))  # If there are multiple differences, combine them into a single string
                       } else {
-                        return(NA)  # 如果没有符合条件的值，返回 NA
+                        return(NA)  # If no qualifying value is found, return NA
                       }
                     } else {
-                      return(NA)  # 如果是NA，直接返回NA
+                      return(NA) 
                     }
                   })))
   
-  # 过滤掉所有差值大于 10000 的行对应的fa_name
+  # Filter out all rows where the difference exceeds 10,000 corresponding to fa_name
   df_final <- df_final %>%
     filter(if_any(all_of(paste0(unique_classes, "_gap")), ~ !is.na(.))) %>%
     mutate(across(ends_with("_fa_name"), ~ ifelse(is.na(.), "NA", .))) %>%
-    mutate(across(ends_with("_gap"), ~ ifelse(is.na(.), "NA", .))) %>% # 空白值全部换成NA字符
-    select_if(~ !all(. == "NA")) # 删除没有结果的列
+    mutate(across(ends_with("_gap"), ~ ifelse(is.na(.), "NA", .))) %>% 
+    select_if(~ !all(. == "NA")) 
   
   df_final <- df_final %>%
     left_join(
       df1 %>%
         select(Contig, Kingdom, Phylum, Class, Order, Family, Genera, Species, Genome) %>%
-        distinct(Contig, .keep_all = TRUE),  # 去重，保留每个 Contig 的第一行
+        distinct(Contig, .keep_all = TRUE), 
       by = c("Specific_Contig" = "Contig")
     )
-  
-  # 返回最终的df_final
   return(df_final)
 }
 
-# 调用函数并将结果输出到文件
 df_final <- MGE_compilation(df_final, df1_grouped)
 
 # Print results
 write.xlsx(df_final, 'C:/Users/KEN/Desktop/UK/PhD/output_file_MGE.xlsx')
+
