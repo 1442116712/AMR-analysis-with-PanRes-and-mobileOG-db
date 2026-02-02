@@ -30,4 +30,43 @@ cat spilt1_output.txt | awk '{ if ($3 > 70 && $11 < 0.000001) { print $0 } }' > 
 # run the batch
 sbatch MAG_blast.sh
 # grep the MAGs accession ID by searching the blast query contig id
-grep -o -w -f ID.txt *.fna | sed 's/:/ /' | awk '{print $2 "\t" $1}' | sort -u > all_matches.txt
+grep -o -w -f ID.txt *.fna | sed 's/:/ /' | awk '{print $2 "\t" $1}' | sort -u > all_MAG_matches.txt
+
+
+# collect rumen pure culture whole genomes from NCBI (should have your target genome accession ID - ID.txt)
+# download and activate the NCBI dataset tool
+wget https://anaconda.org/conda-forge/ncbi-datasets-cli
+module load mamba/1.3.1
+conda create -n ncbi_datasets
+conda activate ncbi_datasets
+conda install -c conda-forge ncbi-datasets-cli
+# download the target genome from the NCBI dataset
+datasets download genome accession --inputfile ID.txt --filename rumen_WGS_genomes.zip
+unzip rumen_WGS_genomes.zip
+cd rumen_WGS_genomes
+# cp all fna files to a new directory and merge
+mkdir rumen_WGS
+find . -type f -name "*.fna" -exec cp -t rumen_WGS {} +
+cd rumen_WGS
+cat *.fna > PCG.fna
+# create the job
+nano PCG_blast.sh
+# copy the code below
+#!/bin/bash
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=40G
+#SBATCH --job-name=mag.blast
+#SBATCH --error=stderr.txt
+#SBATCH --output=stdout.txt
+#SBATCH --partition=k2-medpri
+#SBATCH --time=24:00:00
+#SBATCH --nodes=1
+#SBATCH --mail-user=zwu18@qub.ac.uk
+#SBATCH --mail-type=BEGIN,END,FAIL
+module load apps/ncbiblast/2.15.0/gcc-14.1.0
+blastn -db [PanRes_db path] -query PCG.fna -out PCG_output.txt -outfmt 6
+cat PCG_output.txt | awk '{ if ($3 > 70 && $11 < 0.000001) { print $0 } }' > filter_PCG_output.txt
+# run the batch
+sbatch PCG_blast.sh
+# grep the MAGs accession ID by searching the blast query contig id
+grep -o -w -f ID.txt *.fna | sed 's/:/ /' | awk '{print $2 "\t" $1}' | sort -u > all_PCG_matches.txt
