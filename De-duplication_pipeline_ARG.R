@@ -90,9 +90,3 @@ df_final <- df_combined %>% filter_all(any_vars(. !="" & !is.na(.)))
 # Print results
 write.xlsx(df_final, 'output_file.xlsx')
 
-
-
-# De-duplication step One
-# df <- df[!duplicated(df[, c('Contig', 'cluster_representative')]), ] # can add more variable 
-# df <- df[!duplicated(df[, c('Contig', 'class','qstart')]), ]
-# df <- df[!duplicated(df[, c('Contig', 'class','qend')]), ]
